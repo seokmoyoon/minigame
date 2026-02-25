@@ -11,22 +11,83 @@
 <body>
   <div id="game-container"></div>
   <div id="ui-layer">
-    <div class="status-bar">
-      <div class="profile-pic">🛡️</div>
-      <div class="stats">
-        <div class="name">Knight (Level 1)</div>
-        <div class="hp-bar-bg">
-          <div id="hp-bar" class="hp-bar-fill"></div>
-          <div id="hp-text" class="bar-text">100 / 100</div>
+    <!-- Bottom Main UI Bar -->
+    <div class="bottom-ui">
+      <!-- Left Stat Panel -->
+      <div class="stat-panel">
+        <div class="stat-row">
+          <span id="world-label" class="world-label">⚔️ 지하 던전</span>
         </div>
-        <div class="exp-bar-bg">
-          <div id="exp-bar" class="exp-bar-fill"></div>
-          <div id="exp-text" class="bar-text">0 / 100</div>
+        <div class="stat-row">
+          <span class="label">LEV:</span>
+          <span id="level-text" class="value">30</span>
+          <span id="exp-percent" class="value-percent">0.0000%</span>
+        </div>
+        <div class="stat-row">
+          <span class="label">💰 Gold:</span>
+          <span id="gold-display" class="value gold">0</span>
+        </div>
+      </div>
+
+      <!-- Center HP/MP Bar -->
+      <div class="status-center">
+        <div class="hp-section">
+          <div class="bar-container hp">
+            <div id="hp-bar" class="bar-fill hp-fill"></div>
+            <span id="hp-text" class="status-text">HP: 133 / 133</span>
+          </div>
+        </div>
+        <div class="dragon-ornament"></div>
+        <div class="mp-section">
+          <div class="bar-container mp">
+            <div id="mp-bar" class="bar-fill mp-fill"></div>
+            <span id="mp-text" class="status-text">MP: 191 / 191</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Quick Slots -->
+      <div class="quick-slots">
+        <div class="slot-grid">
+          <div class="slot" data-key="F1"></div>
+          <div class="slot" data-key="F2"></div>
+          <div class="slot" data-key="F3"></div>
+          <div class="slot" data-key="F4"></div>
+          <div class="slot" data-key="F5"></div>
+          <div class="slot" data-key="F6"></div>
+          <div class="slot" data-key="F7"></div>
+          <div class="slot" data-key="F8"></div>
+        </div>
+        <div class="menu-buttons">
+          <button class="menu-btn" title="Inventory">🎒</button>
+          <button class="menu-btn" title="Skills">⚡</button>
+          <button class="menu-btn" title="Stats">👤</button>
+          <button class="menu-btn" title="Options">⚙️</button>
         </div>
       </div>
     </div>
-    <div class="tip-box">
-      클릭하여 이동하세요. 몬스터는 곧 나타날 예정입니다.
+
+    <!-- Floating Inventory Window -->
+    <div id="inventory-window" class="window hidden">
+      <div class="window-header">🎒 Inventory <span class="close-btn">×</span></div>
+      <div class="window-content inventory-grid">
+        <div class="inv-slot"></div>
+        <div class="inv-slot"></div>
+        <div class="inv-slot"></div>
+        <div class="inv-slot"></div>
+        <div class="inv-slot"></div>
+        <div class="inv-slot"></div>
+        <div class="inv-slot"></div>
+        <div class="inv-slot"></div>
+        <div class="inv-slot"></div>
+        <div class="inv-slot"></div>
+        <div class="inv-slot"></div>
+        <div class="inv-slot"></div>
+        <div class="inv-slot"></div>
+        <div class="inv-slot"></div>
+        <div class="inv-slot"></div>
+        <div class="inv-slot"></div>
+      </div>
     </div>
   </div>
   <script type="module" src="/src/main.js"></script>
