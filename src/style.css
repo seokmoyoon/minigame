@@ -261,6 +261,30 @@ body {
   left: 4px;
   font-size: 9px;
   color: #777;
+  z-index: 10;
+}
+
+.spell-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  pointer-events: none;
+}
+
+.spell-icon {
+  font-size: 20px;
+  margin-top: 5px;
+  filter: drop-shadow(0 0 5px currentColor);
+}
+
+.spell-name {
+  font-size: 9px;
+  color: #ccc;
+  margin-top: -2px;
+  font-weight: bold;
 }
 
 .menu-buttons {

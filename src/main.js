@@ -9,6 +9,7 @@ const persist = {
   attackRating: 15, defenseRating: 10,
   inventory: [],   // [{type:'potion'|'gold', qty:N}]
   gold: 0,
+  nickname: localStorage.getItem('player_nickname') || '',
 };
 
 class MainGame extends Phaser.Scene {
@@ -52,6 +53,9 @@ class MainGame extends Phaser.Scene {
   }
 
   create() {
+    // Reset portal state (scene.restart() doesn't re-run constructor!)
+    this.worldSwitching = false;
+
     // ── Background ───────────────────────────────────────────────────────
     const bgKey = persist.currentWorld === 'dungeon' ? 'bg_dungeon' : 'bg_field';
     this.bgImage = this.add.image(0, 0, bgKey)
@@ -77,7 +81,22 @@ class MainGame extends Phaser.Scene {
     const shadow = this.add.ellipse(0, 10, 60, 20, 0x000000, 0.35);
     this.playerSprite = this.add.sprite(0, 0, 'knight_sheet', 0);
     this.playerSprite.setScale(1.5).setOrigin(0.5, 0.85);
-    this.player.add([shadow, this.playerSprite]);
+
+    // Nickname label above player
+    if (!persist.nickname) {
+      persist.nickname = prompt('닉네임을 입력하세요:') || '용사';
+      localStorage.setItem('player_nickname', persist.nickname);
+    }
+    this.playerNameTag = this.add.text(0, -175, persist.nickname, {
+      fontSize: '13px',
+      fontFamily: 'Arial, sans-serif',
+      fill: '#00ffcc',
+      stroke: '#000',
+      strokeThickness: 3,
+      shadow: { offsetX: 0, offsetY: 0, color: '#00ffcc', blur: 6, fill: true }
+    }).setOrigin(0.5);
+
+    this.player.add([shadow, this.playerSprite, this.playerNameTag]);
 
     // Stats from persist
     this.hp = persist.hp; this.maxHp = persist.maxHp;
@@ -117,11 +136,151 @@ class MainGame extends Phaser.Scene {
     });
 
     this.keys = this.input.keyboard.addKeys('W,A,S,D');
+    this.magicKeys = this.input.keyboard.addKeys({
+      F1: Phaser.Input.Keyboard.KeyCodes.F1,
+      F2: Phaser.Input.Keyboard.KeyCodes.F2,
+      F3: Phaser.Input.Keyboard.KeyCodes.F3,
+      ONE: Phaser.Input.Keyboard.KeyCodes.ONE,
+      TWO: Phaser.Input.Keyboard.KeyCodes.TWO,
+      THREE: Phaser.Input.Keyboard.KeyCodes.THREE
+    });
+
+    // Prevent default F key behavior
+    if (this.input.keyboard) {
+      this.input.keyboard.addCapture([
+        Phaser.Input.Keyboard.KeyCodes.F1,
+        Phaser.Input.Keyboard.KeyCodes.F2,
+        Phaser.Input.Keyboard.KeyCodes.F3
+      ]);
+    }
+
     this.updateUI();
+    this.initMagicUI();
     this.updateDayNight();
 
     // Update day/night every 30s
     this.time.addEvent({ delay: 30000, callback: () => this.updateDayNight(), loop: true });
+  }
+
+  initMagicUI() {
+    const slots = document.querySelectorAll('.slot');
+    const magics = [
+      { key: 'F1', icon: '✨', name: '힐', color: '#55ff55' },
+      { key: 'F2', icon: '⚡', name: '볼트', color: '#55aaff' },
+      { key: 'F3', icon: '🏃', name: '헤이스트', color: '#ffff55' }
+    ];
+
+    magics.forEach((m, i) => {
+      if (slots[i]) {
+        slots[i].innerHTML = `
+          <div class="spell-container">
+            <div class="spell-icon" style="color:${m.color}">${m.icon}</div>
+            <div class="spell-name">${m.name}</div>
+          </div>
+        `;
+        slots[i].style.cursor = 'pointer';
+        slots[i].onclick = (e) => {
+          e.preventDefault();
+          this.castMagic(i + 1);
+        };
+      }
+    });
+  }
+
+  castMagic(num) {
+    if (num === 1) this.magicHeal();
+    if (num === 2) this.magicEnergyBolt();
+    if (num === 3) this.magicHaste();
+  }
+
+  // ── MAGIC SKILLS ──────────────────────────────────────────────────────
+  magicHeal() {
+    const cost = 20;
+    if (this.mp < cost) { this.showFloatingText(this.player.x, this.player.y - 50, 'MP 부족!', '#ff0000'); return; }
+    this.mp -= cost;
+    this.hp = Math.min(this.maxHp, this.hp + 50);
+    this.showFloatingText(this.player.x, this.player.y - 50, 'Heal!!', '#55ff55');
+    this.updateUI();
+
+    // Visual Effect
+    const effect = this.add.graphics().setDepth(this.player.depth + 1);
+    effect.fillStyle(0x55ff55, 0.4).fillCircle(this.player.x, this.player.y, 60);
+    this.tweens.add({
+      targets: effect, alpha: 0, scale: 1.5, duration: 600,
+      onComplete: () => effect.destroy()
+    });
+  }
+
+  magicEnergyBolt() {
+    const cost = 10;
+    if (this.mp < cost) { this.showFloatingText(this.player.x, this.player.y - 50, 'MP 부족!', '#ff0000'); return; }
+
+    // Find nearest monster
+    let nearest = null;
+    let minDist = 400;
+    this.monsters.getChildren().forEach(m => {
+      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, m.x, m.y);
+      if (d < minDist) { minDist = d; nearest = m; }
+    });
+
+    if (!nearest) {
+      this.showFloatingText(this.player.x, this.player.y - 50, '대상이 없습니다', '#aaaaaa');
+      return;
+    }
+
+    this.mp -= cost;
+    this.updateUI();
+
+    // Create Projectile
+    const bolt = this.add.circle(this.player.x, this.player.y - 40, 8, 0x55ccff).setDepth(2000);
+
+    this.tweens.add({
+      targets: bolt,
+      x: nearest.x, y: nearest.y - 40,
+      duration: 300,
+      onComplete: () => {
+        bolt.destroy();
+        if (nearest && nearest.active) {
+          const dmg = Phaser.Math.Between(20, 35);
+          this.showDamage(nearest.x, nearest.y - 40, dmg);
+          nearest.hp -= dmg;
+
+          // Hit effect
+          this.cameras.main.shake(150, 0.01);
+          const blast = this.add.circle(nearest.x, nearest.y - 40, 10, 0x00ffff, 0.8);
+          this.tweens.add({ targets: blast, scale: 3, alpha: 0, duration: 200, onComplete: () => blast.destroy() });
+
+          if (nearest.hp <= 0) this.killMonster(nearest);
+        }
+      }
+    });
+  }
+
+  magicHaste() {
+    const cost = 30;
+    if (this.mp < cost) { this.showFloatingText(this.player.x, this.player.y - 50, 'MP 부족!', '#ff0000'); return; }
+    if (this.isHasted) return;
+
+    this.mp -= cost;
+    this.isHasted = true;
+    const originalSpeed = this.speed || 220;
+    this.speed = 350;
+    this.updateUI();
+
+    this.showFloatingText(this.player.x, this.player.y - 80, 'HASTE!!', '#ffff55');
+
+    // Aura effect during haste
+    const hasteAura = this.add.graphics();
+    hasteAura.lineStyle(2, 0xffff55, 0.4).strokeCircle(0, 0, 40);
+    this.player.add(hasteAura);
+    this.tweens.add({ targets: hasteAura, alpha: 0.1, duration: 500, yoyo: true, repeat: -1 });
+
+    this.time.delayedCall(15000, () => {
+      this.isHasted = false;
+      this.speed = originalSpeed;
+      hasteAura.destroy();
+      this.showFloatingText(this.player.x, this.player.y - 80, 'Haste End', '#aaaaaa');
+    });
   }
 
   // ── 1. DAY/NIGHT ──────────────────────────────────────────────────────
@@ -192,14 +351,30 @@ class MainGame extends Phaser.Scene {
         if (this.mapData[sy + dy]?.[sx + dx] !== undefined) this.mapData[sy + dy][sx + dx] = 0;
     this.player.setPosition(...Object.values(this.gridToWorld(sx, sy)));
 
-    // Portal (near top-left)
-    const px = 5, py = 5;
+    // Portal — placed on the top boundary wall
+    const px = Math.floor(this.mapWidth / 2), py = 1;
     this.mapData[py][px] = 2;
-    // Clear around portal
-    for (let dy = -1; dy <= 1; dy++)
-      for (let dx = -1; dx <= 1; dx++)
-        if (this.mapData[py + dy]?.[px + dx] !== undefined && !(dy === 0 && dx === 0))
+    // Also mark tiles in front of the door as portal trigger floor
+    this.mapData[py + 1][px] = 3;
+    this.mapData[py + 2][px] = 3;
+    // Store portal world position for distance check
+    const portalPos = this.gridToWorld(px, py + 2);
+    this.portalWorldX = portalPos.x;
+    this.portalWorldY = portalPos.y;
+    // Clear the tiles in front of the door so player can reach it
+    for (let dy = 3; dy <= 5; dy++)
+      for (let dx = -2; dx <= 2; dx++)
+        if (this.mapData[py + dy]?.[px + dx] !== undefined)
           this.mapData[py + dy][px + dx] = 0;
+
+    // Clear a path from door area down to player spawn
+    const pathStartY = py + 4;
+    const stepY = pathStartY < sy ? 1 : -1;
+    for (let y = pathStartY; y !== sy; y += stepY) {
+      if (this.mapData[y]?.[px] !== undefined) this.mapData[y][px] = 0;
+      if (this.mapData[y]?.[px + 1] !== undefined) this.mapData[y][px + 1] = 0;
+      if (this.mapData[y]?.[px - 1] !== undefined) this.mapData[y][px - 1] = 0;
+    }
   }
 
   createIsometricGrid() {
@@ -219,25 +394,59 @@ class MainGame extends Phaser.Scene {
           this.add.image(pos.x + tw / 4, pos.y - wallH / 2, 'wall_tile')
             .setDisplaySize(tw / 2, wallH).setTint(wallTint).setDepth(pos.y + 5);
         } else if (type === 2) {
-          // Portal glow
-          const glow = this.add.graphics();
-          glow.fillStyle(isDungeon ? 0x00ffff : 0xff8800, 0.3);
-          glow.fillCircle(pos.x, pos.y, 40);
-          glow.setDepth(pos.y - 2);
-          this.tweens.add({ targets: glow, alpha: 0.1, duration: 1000, yoyo: true, repeat: -1 });
-
-          const portal = this.add.sprite(pos.x, pos.y, 'portal').setScale(0.5).setDepth(pos.y);
-          portal.setTint(isDungeon ? 0x00ffff : 0xff8800);
-          this.tweens.add({ targets: portal, angle: 360, duration: 4000, repeat: -1 });
-
-          const label = isDungeon ? '🏘️ Exit to Village' : '⚔️ Enter Dungeon';
-          this.add.text(pos.x, pos.y - 55, label, {
-            fontSize: '14px', fill: '#fff', stroke: '#000', strokeThickness: 3
-          }).setOrigin(0.5).setDepth(pos.y + 1);
-
-          // Floor under portal
+          // Floor under door
           this.add.image(pos.x, pos.y, floorKey)
             .setDisplaySize(tw, th).setDepth(-1000);
+
+          // Door embedded in wall
+          const doorColor = isDungeon ? 0x00ccff : 0xff8800;
+          const doorW = 40, doorH = 100;
+          const doorX = pos.x, doorY = pos.y - doorH / 2;
+
+          // Stone door frame (outer)
+          const frame = this.add.graphics();
+          frame.fillStyle(0x555566, 1);
+          frame.fillRect(doorX - doorW / 2 - 8, doorY - doorH / 2 - 12, doorW + 16, doorH + 14);
+          // Arch top
+          frame.fillCircle(doorX, doorY - doorH / 2 - 4, doorW / 2 + 8);
+          frame.setDepth(pos.y + 3);
+
+          // Door interior (dark)
+          const door = this.add.graphics();
+          door.fillStyle(0x1a1a2e, 1);
+          door.fillRect(doorX - doorW / 2, doorY - doorH / 2, doorW, doorH);
+          // Arch top interior
+          door.fillCircle(doorX, doorY - doorH / 2, doorW / 2);
+          door.setDepth(pos.y + 4);
+
+          // Glowing interior effect
+          const glow = this.add.graphics();
+          glow.fillStyle(doorColor, 0.4);
+          glow.fillRect(doorX - doorW / 2 + 4, doorY - doorH / 2 + 4, doorW - 8, doorH - 6);
+          glow.fillCircle(doorX, doorY - doorH / 2 + 2, doorW / 2 - 4);
+          glow.setDepth(pos.y + 5);
+          this.tweens.add({ targets: glow, alpha: 0.2, duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
+          // Door handle
+          const handle = this.add.graphics();
+          handle.fillStyle(0xddaa44, 1);
+          handle.fillCircle(doorX + doorW / 4, doorY + 5, 3);
+          handle.setDepth(pos.y + 6);
+
+          // Label above door
+          const label = isDungeon ? '🏘️ 마을로 나가기' : '⚔️ 던전 입장';
+          this.add.text(doorX, doorY - doorH / 2 - 30, label, {
+            fontSize: '12px', fill: '#fff', stroke: '#000', strokeThickness: 3
+          }).setOrigin(0.5).setDepth(pos.y + 7);
+        } else if (type === 3) {
+          // Portal trigger floor — glowing floor tile in front of door
+          this.add.image(pos.x, pos.y, floorKey)
+            .setDisplaySize(tw, th).setDepth(-1000);
+          const floorGlow = this.add.graphics();
+          floorGlow.fillStyle(isDungeon ? 0x00ccff : 0xff8800, 0.15);
+          floorGlow.fillRect(pos.x - tw / 2, pos.y - th / 2, tw, th);
+          floorGlow.setDepth(-999);
+          this.tweens.add({ targets: floorGlow, alpha: 0.05, duration: 1500, yoyo: true, repeat: -1 });
         } else {
           this.add.image(pos.x, pos.y, floorKey)
             .setDisplaySize(tw, th).setDepth(-1000);
@@ -293,9 +502,9 @@ class MainGame extends Phaser.Scene {
   getMonsterTypes() {
     return [
       { name: 'Slime', sprite: 'mob_slime', hp: 30, atk: 3, exp: 15, scale: 0.8, speed: 60, dropRate: 0.3 },
-      { name: 'Skeleton', sprite: 'mob_skeleton', hp: 60, atk: 6, exp: 30, scale: 1.0, speed: 80, dropRate: 0.4 },
-      { name: 'Orc', sprite: 'mob_orc', hp: 100, atk: 10, exp: 50, scale: 1.2, speed: 70, dropRate: 0.5 },
-      { name: 'Dark Knight', sprite: 'mob_darkknight', hp: 200, atk: 18, exp: 120, scale: 1.4, speed: 90, dropRate: 0.7 },
+      { name: 'Skeleton', sprite: 'mob_skeleton', hp: 60, atk: 6, exp: 30, scale: 0.85, speed: 80, dropRate: 0.4 },
+      { name: 'Orc', sprite: 'mob_orc', hp: 100, atk: 10, exp: 50, scale: 0.95, speed: 70, dropRate: 0.5 },
+      { name: 'Dark Knight', sprite: 'mob_darkknight', hp: 200, atk: 18, exp: 120, scale: 1.1, speed: 90, dropRate: 0.7 },
       { name: '🔥 Dragon', sprite: 'mob_dragon', hp: 500, atk: 30, exp: 300, scale: 2.0, speed: 50, dropRate: 1.0 },
     ];
   }
@@ -336,20 +545,21 @@ class MainGame extends Phaser.Scene {
     const monster = this.add.container(pos.x, pos.y);
 
     // Shadow + Sprite
-    const shadowSize = 20 * type.scale;
+    const shadowSize = 15 * type.scale;
     const shadow = this.add.ellipse(0, 5, shadowSize * 2, shadowSize * 0.6, 0x000000, 0.25);
     const sprite = this.add.sprite(0, 0, type.sprite).setScale(type.scale).setOrigin(0.5, 0.8);
     monster.add([shadow, sprite]);
 
     // HP bar
-    const barW = Math.min(60, 20 + type.hp / 5);
-    const hpBg = this.add.graphics().fillStyle(0x000000, 0.8).fillRect(-barW / 2, -45, barW, 6);
-    const hpFill = this.add.graphics().fillStyle(0x00ff00, 1).fillRect(-barW / 2, -45, barW, 6);
+    const barW = Math.min(50, 16 + type.hp / 8);
+    const barY = -30 * type.scale - 10;
+    const hpBg = this.add.graphics().fillStyle(0x000000, 0.8).fillRect(-barW / 2, barY, barW, 5);
+    const hpFill = this.add.graphics().fillStyle(0x00ff00, 1).fillRect(-barW / 2, barY, barW, 5);
     monster.add([hpBg, hpFill]);
 
     // Name tag
-    const nameTxt = this.add.text(0, -55, type.name, {
-      fontSize: type.hp >= 200 ? '12px' : '10px',
+    const nameTxt = this.add.text(0, barY - 12, type.name, {
+      fontSize: type.hp >= 200 ? '10px' : '8px',
       fill: type.hp >= 200 ? '#ff8800' : '#fff',
       stroke: '#000', strokeThickness: 2
     }).setOrigin(0.5);
@@ -360,6 +570,7 @@ class MainGame extends Phaser.Scene {
     monster.atk = type.atk; monster.monsterSpeed = type.speed;
     monster.expReward = type.exp; monster.dropRate = type.dropRate;
     monster.barWidth = barW;
+    monster.barY = barY;
     monster.spriteKey = type.sprite; // store for animation lookup
     this.monsters.add(monster);
     monster.lastAttackTime = 0;
@@ -387,7 +598,7 @@ class MainGame extends Phaser.Scene {
       this.showDamage(monster.x, monster.y - 40, dmg);
       monster.hp -= dmg;
       const pc = Math.max(0, monster.hp / monster.maxHp);
-      monster.hpBar.clear().fillStyle(pc > 0.3 ? 0x00ff00 : 0xff0000, 1).fillRect(-monster.barWidth / 2, -45, monster.barWidth * pc, 6);
+      monster.hpBar.clear().fillStyle(pc > 0.3 ? 0x00ff00 : 0xff0000, 1).fillRect(-monster.barWidth / 2, monster.barY, monster.barWidth * pc, 5);
 
       // Play hit animation on monster
       const hitKey = `${monster.spriteKey}_hit`;
@@ -580,7 +791,7 @@ class MainGame extends Phaser.Scene {
     this.playerSprite.setFlipX(x < this.player.x);
     const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, x, y);
     this.tweens.killTweensOf(this.player);
-    this.tweens.add({ targets: this.player, x, y, duration: (dist / 220) * 1000, ease: 'Linear', onStart: () => { this.isMoving = true; }, onComplete: () => { this.isMoving = false; } });
+    this.tweens.add({ targets: this.player, x, y, duration: (dist / (this.speed || 220)) * 1000, ease: 'Linear', onStart: () => { this.isMoving = true; }, onComplete: () => { this.isMoving = false; } });
   }
 
   // ── 4. UI UPDATE ──────────────────────────────────────────────────────
@@ -654,15 +865,23 @@ class MainGame extends Phaser.Scene {
     this.prevY = this.player.y;
     this.player.setDepth(this.player.y);
 
-    // Portal check
-    const { gx, gy } = this.worldToGrid(this.player.x, this.player.y);
-    if (this.mapData[gy]?.[gx] === 2 && !this.worldSwitching) {
-      this.worldSwitching = true;
-      // Save before switch
-      persist.hp = this.hp; persist.mp = this.mp;
-      persist.exp = this.exp; persist.level = this.level;
-      this.switchWorld();
+    // Portal check — distance-based
+    if (this.portalWorldX !== undefined && !this.worldSwitching) {
+      const pDist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.portalWorldX, this.portalWorldY);
+
+      if (pDist < 120) {
+        this.worldSwitching = true;
+        // Save before switch
+        persist.hp = this.hp; persist.mp = this.mp;
+        persist.exp = this.exp; persist.level = this.level;
+        this.switchWorld();
+      }
     }
+
+    // Handle Magic Keys
+    if (Phaser.Input.Keyboard.JustDown(this.magicKeys.F1) || Phaser.Input.Keyboard.JustDown(this.magicKeys.ONE)) this.magicHeal();
+    if (Phaser.Input.Keyboard.JustDown(this.magicKeys.F2) || Phaser.Input.Keyboard.JustDown(this.magicKeys.TWO)) this.magicEnergyBolt();
+    if (Phaser.Input.Keyboard.JustDown(this.magicKeys.F3) || Phaser.Input.Keyboard.JustDown(this.magicKeys.THREE)) this.magicHaste();
   }
 
   handleKeyboardMovement() {
@@ -690,7 +909,7 @@ class MainGame extends Phaser.Scene {
         this.tweens.add({
           targets: this.player,
           x: nx, y: ny,
-          duration: 180,
+          duration: (stepSize / (this.speed || 220)) * 1000,
           ease: 'Linear',
           onComplete: () => {
             // If key is still held, the next frame's update will queue another step
